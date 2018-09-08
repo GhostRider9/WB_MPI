@@ -5,18 +5,37 @@
 #include <mpi.h>
 
 #define root 0
+#define PERIODICITY_CHECKING_ENABLED 1
+
+
 
 // return 1 if in set, 0 otherwise
 int inset(double real, double img, int maxiter){
     double z_real = real;
     double z_img = img;
 
+    double test_real = z_real;
+    double test_img = z_img;
+    int period = 8 ;
+    int period_index =0;
     for(int iters = 0; iters < maxiter; iters++){
+
         double z2_real = z_real*z_real-z_img*z_img;
         double z2_img = 2.0*z_real*z_img;
         z_real = z2_real + real;
         z_img = z2_img + img;
+        if ((PERIODICITY_CHECKING_ENABLED)&&(z_real==test_real)&&(z_img==test_img)){
+            return 1;
+        }
         if(z_real*z_real + z_img*z_img > 4.0) return 0;
+        period_index++;
+        if(period_index==period){
+            test_real= z_real;
+            test_img=z_img;
+            period_index=0;
+            period *= 2;
+        }
+
     }
     return 1;
 }
