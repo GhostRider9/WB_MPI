@@ -8,19 +8,53 @@
 #define slice 20
 #define tag_do_work 1
 #define tag_done_work 2
-#define tag_shutdown 4
+#define tag_shutdown 3
+
+#define PERIODICITY_CHECKING_ENABLED 1
+#define CARDIOID_BULB_CHECKING 1
+
 
 // return 1 if in set, 0 otherwise
-int inset(double real, double img, int maxiter){
-    double z_real = real;
-    double z_img = img;
+int inset(float real, float img, int maxiter){
+    if (CARDIOID_BULB_CHECKING){
+        // cardioid check
+        float img2= img*img;
+        float q= (real-1.0/4.0)*(real-1.0/4.0) + img2;
+        if ((q*(q+(real-1.0/4.0)))<(1.0/4.0*img2)){
+            // in cardioid
+            return 1;
+        }
+        // period 2 bulb check
+        if (((real+1)*(real+1))+img2<1.0/16.0){
+            return 1; // in period 2 bulb
+        }
+    }
 
+    float z_real = real;
+    float z_img = img;
+
+    float test_real = z_real;
+    float test_img = z_img;
+    int period = 8 ;
+    int period_index =0;
     for(int iters = 0; iters < maxiter; iters++){
-        double z2_real = z_real*z_real-z_img*z_img;
-        double z2_img = 2.0*z_real*z_img;
+
+        float z2_real = z_real*z_real-z_img*z_img;
+        float z2_img = 2.0*z_real*z_img;
         z_real = z2_real + real;
         z_img = z2_img + img;
+        if ((PERIODICITY_CHECKING_ENABLED)&&(z_real==test_real)&&(z_img==test_img)){
+            return 1;
+        }
         if(z_real*z_real + z_img*z_img > 4.0) return 0;
+        period_index++;
+        if(period_index==period){
+            test_real= z_real;
+            test_img=z_img;
+            period_index=0;
+            period *= 2;
+        }
+
     }
     return 1;
 }
