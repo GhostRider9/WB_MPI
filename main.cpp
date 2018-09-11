@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <omp.h>
 #include <mpi.h>
+#include "edge_tracking.cpp"
 
 #define root 0
 #define slice 20
@@ -10,8 +11,8 @@
 #define tag_done_work 2
 #define tag_shutdown 3
 
-#define PERIODICITY_CHECKING_ENABLED 1
-#define CARDIOID_BULB_CHECKING 1
+#define PERIODICITY_CHECKING_ENABLED 0
+#define CARDIOID_BULB_CHECKING 0
 
 
 // return 1 if in set, 0 otherwise
@@ -127,21 +128,23 @@ int slaveDoWork(double real_lower, double real_upper, double img_lower, double i
         if(status.MPI_TAG==tag_do_work){
             MPI_Recv(buffer,2,MPI_DOUBLE,root,tag_do_work,MPI_COMM_WORLD,&status);
 
-            //printf("Node %d receive data from root, data %lf,%lf\n", rank,buffer[0],buffer[1]);
+//            printf("Node %d receive data from root, data %lf,%lf\n", rank,buffer[0],buffer[1]);
 
             start_r=buffer[0];
             end_r=buffer[1];
 
             double real_temp=start_r;
 
-            for(int real=1; real_temp<end_r; real++){
-//                printf("%lf",real_temp);
-                for(int img=0; img<num; img++){
-                    local_count+=inset(real_temp,img_lower+img*img_step,maxiter);
-                    real_temp=start_r+real*real_step;
-                }
-            }
-            //printf("No.%d node counted %d numbers\n", rank,local_count);
+//            for(int real=1; real_temp<end_r; real++){
+////                printf("%lf",real_temp);
+//                for(int img=0; img<num; img++){
+//                    local_count+=inset(real_temp,img_lower+img*img_step,maxiter);
+//                    real_temp=start_r+real*real_step;
+//                }
+//            }
+            EdgeTracker* et = new EdgeTracker();
+            local_count += et->pointsInRegion(start_r,end_r,img_lower,img_upper,maxiter,slice,num);
+            printf("No.%d node counted %d numbers\n", rank,local_count);
 
             MPI_Ssend(NULL,0,MPI_INT,root,tag_done_work,MPI_COMM_WORLD);
             //printf("Node %d asks for work\n",rank);
@@ -154,6 +157,8 @@ int slaveDoWork(double real_lower, double real_upper, double img_lower, double i
     }
     return local_count;
 }
+
+
 
 // count the number of points in the set, within the region
 void mandelbrotSetCount(double real_lower, double real_upper, double img_lower, double img_upper, int num, int maxiter){
