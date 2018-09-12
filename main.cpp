@@ -3,17 +3,23 @@
 #include <cstdlib>
 #include <omp.h>
 #include <mpi.h>
+#include <math.h>
 #include "edge_tracking.cpp"
 
 #define root 0
-#define slice 20
+#define slice 200
 #define tag_do_work 1
 #define tag_done_work 2
 #define tag_shutdown 3
 
+
 #define PERIODICITY_CHECKING_ENABLED 0
 #define CARDIOID_BULB_CHECKING 0
+#define IMG_AXIS_SYMMETRY 1
 
+#define EPSINON 0.00001
+
+static int state=0;
 
 // return 1 if in set, 0 otherwise
 int inset(float real, float img, int maxiter){
@@ -63,8 +69,13 @@ int inset(float real, float img, int maxiter){
 
 void masterDoWork(double real_lower, double real_upper,int num){
 
-    int nnodes;
-    MPI_Comm_size(MPI_COMM_WORLD,&nnodes);
+//#pragma omp parallel
+//    {
+//        printf("Master threads: %d\n",omp_get_num_threads());
+//    }
+
+    int nprocess;
+    MPI_Comm_size(MPI_COMM_WORLD,&nprocess);
 
     double real_step=(real_upper-real_lower)/num;
     double gap=slice*real_step;
@@ -83,13 +94,13 @@ void masterDoWork(double real_lower, double real_upper,int num){
     while(1){
 
         MPI_Recv(NULL,0,MPI_INT,MPI_ANY_SOURCE,tag_done_work,MPI_COMM_WORLD,&status);
-        //printf("Master received node %d asks for work\n",status.MPI_SOURCE);
+        //printf("Master received process %d asks for work\n",status.MPI_SOURCE);
 
         if(allDone){
-            //printf("Send no work signal to node %d\n", status.MPI_SOURCE);
+            //printf("Send no work signal to process %d\n", status.MPI_SOURCE);
             MPI_Ssend(NULL,0,MPI_INT,status.MPI_SOURCE,tag_shutdown,MPI_COMM_WORLD);
             count++;
-            if(count==nnodes){
+            if(count==nprocess){
                 break;
             }
         }else{
@@ -110,12 +121,37 @@ void masterDoWork(double real_lower, double real_upper,int num){
 
 
 int slaveDoWork(double real_lower, double real_upper, double img_lower, double img_upper, int num, int maxiter){
+
+//#pragma omp parallel
+//    {
+//        printf("Slave threads: %d\n",omp_get_num_threads());
+//    }
+
+
     double buffer[2];
     double start_r, end_r;
-    double img_step = (img_upper-img_lower)/num;
-    double real_step = (real_upper-real_lower)/num;
+    double img_length = img_upper-img_lower;
+//    double real_step = (real_upper-real_lower)/num;
     int local_count=0;
     bool noWork= false;
+
+    if(IMG_AXIS_SYMMETRY){
+        if(img_upper>0 && img_lower<0){
+            if(abs(img_lower+img_upper)<EPSINON){
+                state=1;
+            }
+            else {
+                if(abs(img_upper)<abs(img_lower)){
+                    double temp=img_lower;
+                    img_lower=-img_upper;
+                    img_upper=-temp;
+                }
+                state=2;
+            }
+        }
+    }
+
+//    printf("%lf,%lf\n",img_lower,img_upper);
 
     int rank;
     MPI_Comm_rank(MPI_COMM_WORLD,&rank);
@@ -123,17 +159,20 @@ int slaveDoWork(double real_lower, double real_upper, double img_lower, double i
     MPI_Status status;
     MPI_Ssend(NULL,0,MPI_INT,root,tag_done_work,MPI_COMM_WORLD);
 
+
+    EdgeTracker* et = new EdgeTracker();
+
     while(!noWork){
         MPI_Probe (root, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
         if(status.MPI_TAG==tag_do_work){
             MPI_Recv(buffer,2,MPI_DOUBLE,root,tag_do_work,MPI_COMM_WORLD,&status);
 
-//            printf("Node %d receive data from root, data %lf,%lf\n", rank,buffer[0],buffer[1]);
+//            printf("Process %d receive data from root, data %lf,%lf\n", rank,buffer[0],buffer[1]);
 
             start_r=buffer[0];
             end_r=buffer[1];
 
-            double real_temp=start_r;
+//            double real_temp=start_r;
 
 //            for(int real=1; real_temp<end_r; real++){
 ////                printf("%lf",real_temp);
@@ -142,12 +181,29 @@ int slaveDoWork(double real_lower, double real_upper, double img_lower, double i
 //                    real_temp=start_r+real*real_step;
 //                }
 //            }
-            EdgeTracker* et = new EdgeTracker();
-            local_count += et->pointsInRegion(start_r,end_r,img_lower,img_upper,maxiter,slice,num);
-            printf("No.%d node counted %d numbers\n", rank,local_count);
+            int temp_num1, temp_num2;
+
+//            printf("State: %d\n",state);
+            switch(state){
+                case 0:
+                    local_count += et->pointsInRegion(start_r,end_r,img_lower,img_upper,maxiter,slice,num);
+                    break;
+                case 1:
+                    temp_num1=num/2;
+                    local_count += 2*et->pointsInRegion(start_r,end_r,0,img_upper,maxiter,slice,temp_num1);
+                    break;
+                case 2:
+                    temp_num1=(int)(-img_lower*num/img_length);
+                    temp_num2=(int)((img_upper+img_lower)*num/img_length);
+
+                    local_count += 2*et->pointsInRegion(start_r,end_r,0,-img_lower,maxiter,slice,temp_num1);
+                    local_count += et->pointsInRegion(start_r,end_r,-img_lower,img_upper,maxiter,slice,temp_num2);
+                    break;
+            }
+//            printf("No.%d process counted %d numbers\n", rank,local_count);
 
             MPI_Ssend(NULL,0,MPI_INT,root,tag_done_work,MPI_COMM_WORLD);
-            //printf("Node %d asks for work\n",rank);
+            //printf("Process %d asks for work\n",rank);
 
         } else if(status.MPI_TAG==tag_shutdown){
             MPI_Recv(NULL,0,MPI_INT,root,tag_shutdown,MPI_COMM_WORLD,&status);
@@ -163,14 +219,14 @@ int slaveDoWork(double real_lower, double real_upper, double img_lower, double i
 // count the number of points in the set, within the region
 void mandelbrotSetCount(double real_lower, double real_upper, double img_lower, double img_upper, int num, int maxiter){
 
-    int nnodes, //number of MPI nodes in the computation
-            rank; //node number
+    int nprocess, //number of MPI process in the computation
+            rank; //process number
 
-    MPI_Comm_size(MPI_COMM_WORLD,&nnodes);
+    MPI_Comm_size(MPI_COMM_WORLD,&nprocess);
     MPI_Comm_rank(MPI_COMM_WORLD,&rank);
     MPI_Barrier(MPI_COMM_WORLD);
 
-    printf("nnodes:%d,rank:%d\n",nnodes,rank);
+    printf("nprocess:%d,rank:%d\n",nprocess,rank);
 
     int global_count=0,local_count=0;
 
@@ -178,9 +234,9 @@ void mandelbrotSetCount(double real_lower, double real_upper, double img_lower, 
         masterDoWork(real_lower,real_upper,num);
     }
     else{
-        //printf("slave node %d do work\n",rank);
+        //printf("slave process %d do work\n",rank);
         local_count=slaveDoWork(real_lower,real_upper,img_lower,img_upper,num,maxiter);
-        //printf("No.%d node counted %d numbers\n", rank,local_count);
+        //printf("No.%d process counted %d numbers\n", rank,local_count);
     }
 
 //    MPI_Barrier(MPI_COMM_WORLD);
