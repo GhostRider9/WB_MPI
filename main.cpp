@@ -7,15 +7,15 @@
 #include <ctime>
 
 #define root 0
-#define slice 1000
+#define slice 10000
 #define tag_do_work 1
 #define tag_done_work 2
 #define tag_shutdown 3
 
-#define PERIODICITY_CHECKING_ENABLED 0
-#define CARDIOID_BULB_CHECKING 0
-#define OMP_ENABLED 1
-
+#define PERIODICITY_CHECKING_ENABLED true
+#define CARDIOID_BULB_CHECKING true
+#define OMP_ENABLED true
+#define EDGE_TRACKING_ENABLED true
 
 // return 1 if in set, 0 otherwise
 int inset(float real, float img, int maxiter){
@@ -85,6 +85,7 @@ void masterDoWork(double real_lower, double real_upper,int num){
     while(1){
 
         MPI_Recv(NULL,0,MPI_INT,MPI_ANY_SOURCE,tag_done_work,MPI_COMM_WORLD,&status);
+        //printf("Master received node %d asks for work\n",status.MPI_SOURCE);
         //printf("Master received node %d asks for work\n",status.MPI_SOURCE);
 
         if(allDone){
@@ -167,6 +168,9 @@ int slaveDoWork(double real_lower, double real_upper, double img_lower, double i
 //            }
             if (!OMP_ENABLED){
                 EdgeTracker *et = new EdgeTracker();
+                et->setCardioidChecking(CARDIOID_BULB_CHECKING);
+                et->setPeriodicityChecking(PERIODICITY_CHECKING_ENABLED);
+                et->setEdgeTrackingEnabled(EDGE_TRACKING_ENABLED);
                 local_count += et->pointsInRegion(start_r, end_r, img_lower, img_upper, maxiter, slice, num);
                 printf("No.%d node counted %d numbers\n", rank, local_count);
             }else {
@@ -176,6 +180,9 @@ int slaveDoWork(double real_lower, double real_upper, double img_lower, double i
                     for (int i = 0; i < horizontal_slice_count; i++) {
                //     printf("in for threads: %d\n",omp_get_num_threads());
                         EdgeTracker *et = new EdgeTracker();
+                        et->setCardioidChecking(CARDIOID_BULB_CHECKING);
+                        et->setPeriodicityChecking(PERIODICITY_CHECKING_ENABLED);
+                        et->setEdgeTrackingEnabled(EDGE_TRACKING_ENABLED);
                         local_count += et->pointsInRegion(start_r, end_r, img_lower+((img_upper-img_lower)/horizontal_slice_count)*i,img_lower+((img_upper-img_lower)/horizontal_slice_count)*(i+1) , maxiter, slice, floor((float)num/(float)horizontal_slice_count));
                 }
             }

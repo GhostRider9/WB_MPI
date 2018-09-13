@@ -13,7 +13,9 @@ class EdgeTracker {
 //    const float stepi = (maxi - mini) / Height;
 //
     float stepr, stepi;
-
+    bool cardioid_bulb_checking = true;
+    bool periodicity_checking= true;
+    bool edge_tracking_enabled = true;
     enum {
         Loaded = 1, Queued = 2
     };
@@ -23,6 +25,21 @@ class EdgeTracker {
     int *Queue;
     int QueueHead = 0, QueueTail = 0;
 
+
+public:
+    void setCardioidChecking(bool enabled){
+        this->cardioid_bulb_checking=enabled;
+    }
+
+public:
+    void setPeriodicityChecking(bool enabled){
+        this->periodicity_checking=enabled;
+    }
+
+public:
+    void setEdgeTrackingEnabled(bool enabled){
+        this->edge_tracking_enabled=enabled;
+    }
 
     int Iterate(float x, float y) {
         int iter;
@@ -40,18 +57,19 @@ class EdgeTracker {
 
     int inset(float real, float img) {
 
-        // cardioid check
-        float img2 = img * img;
-        float q = (real - 1.0 / 4.0) * (real - 1.0 / 4.0) + img2;
-        if ((q * (q + (real - 1.0 / 4.0))) < (1.0 / 4.0 * img2)) {
-            // in cardioid
-            return MaxIter;
+        if(this->cardioid_bulb_checking) {
+            // cardioid check
+            float img2 = img * img;
+            float q = (real - 1.0 / 4.0) * (real - 1.0 / 4.0) + img2;
+            if ((q * (q + (real - 1.0 / 4.0))) < (1.0 / 4.0 * img2)) {
+                // in cardioid
+                return MaxIter;
+            }
+            // period 2 bulb check
+            if (((real + 1) * (real + 1)) + img2 < 1.0 / 16.0) {
+                return MaxIter; // in period 2 bulb
+            }
         }
-        // period 2 bulb check
-        if (((real + 1) * (real + 1)) + img2 < 1.0 / 16.0) {
-            return MaxIter; // in period 2 bulb
-        }
-
 
         float z_real = real;
         float z_img = img;
@@ -67,7 +85,7 @@ class EdgeTracker {
             float z2_img = 2.0 * z_real * z_img;
             z_real = z2_real + real;
             z_img = z2_img + img;
-            if ((z_real == test_real) && (z_img == test_img)) {
+            if ((this->periodicity_checking)&&(z_real == test_real) && (z_img == test_img)) {
                 return MaxIter;
             }
             if (z_real * z_real + z_img * z_img > 4.0) break;
@@ -125,6 +143,62 @@ class EdgeTracker {
     }
 //
 
+    int inset_vanilla(float real, float img){
+        if (this->cardioid_bulb_checking){
+            // cardioid check
+            float img2= img*img;
+            float q= (real-1.0/4.0)*(real-1.0/4.0) + img2;
+            if ((q*(q+(real-1.0/4.0)))<(1.0/4.0*img2)){
+                // in cardioid
+                return 1;
+            }
+            // period 2 bulb check
+            if (((real+1)*(real+1))+img2<1.0/16.0){
+                return 1; // in period 2 bulb
+            }
+        }
+
+        float z_real = real;
+        float z_img = img;
+
+        float test_real = z_real;
+        float test_img = z_img;
+        int period = 8 ;
+        int period_index =0;
+        for(int iters = 0; iters < MaxIter; iters++){
+
+            float z2_real = z_real*z_real-z_img*z_img;
+            float z2_img = 2.0*z_real*z_img;
+            z_real = z2_real + real;
+            z_img = z2_img + img;
+            if ((this->periodicity_checking)&&(z_real==test_real)&&(z_img==test_img)){
+                return 1;
+            }
+            if(z_real*z_real + z_img*z_img > 4.0) return 0;
+            period_index++;
+            if(period_index==period){
+                test_real= z_real;
+                test_img=z_img;
+                period_index=0;
+                period *= 2;
+            }
+
+        }
+        return 1;
+    }
+
+    int mandelbrotSetCount(double real_lower, double real_upper, double img_lower, double img_upper, int num, int maxiter){
+        int count=0;
+        double real_step = (real_upper-real_lower)/num;
+        double img_step = (img_upper-img_lower)/num;
+        for(int real=0; real<num; real++){
+            for(int img=0; img<num; img++){
+                count+=inset_vanilla(real_lower+real*real_step,img_lower+img*img_step);
+            }
+        }
+        return count;
+    }
+
 public:
     int
     pointsInRegion(float min_real, float max_real, float min_img, float max_img, int maxIterations, int regionWidth,
@@ -147,6 +221,10 @@ public:
 
         QueueHead = 0;
         QueueTail = 0;
+
+
+        if (!this->edge_tracking_enabled)
+            return this->mandelbrotSetCount(min_real,max_real,min_img,max_img,regionWidth,maxIterations);
 
         this->Data = new int[Width * Height];
 
