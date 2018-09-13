@@ -139,9 +139,9 @@ public:
         Width = regionWidth;
         Height = regionHeight;
         stepr = (maxr - minr) / Width;
-        printf("maxi: %f mini: %f", this->maxi, this->mini);
+//        printf("maxi: %f mini: %f", this->maxi, this->mini);
         stepi = (maxi - mini) / Height;
-        printf("stepr: %f stepi:%f \n", stepr, stepi);
+//        printf("stepr: %f stepi:%f \n", stepr, stepi);
         QueueSize = (Width + Height) * 4;
         this->Queue = new int[QueueSize];
 

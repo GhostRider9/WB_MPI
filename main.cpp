@@ -4,15 +4,17 @@
 #include <omp.h>
 #include <mpi.h>
 #include "edge_tracking.cpp"
+#include <ctime>
 
 #define root 0
-#define slice 20
+#define slice 1000
 #define tag_do_work 1
 #define tag_done_work 2
 #define tag_shutdown 3
 
 #define PERIODICITY_CHECKING_ENABLED 0
 #define CARDIOID_BULB_CHECKING 0
+#define OMP_ENABLED 1
 
 
 // return 1 if in set, 0 otherwise
@@ -116,10 +118,31 @@ int slaveDoWork(double real_lower, double real_upper, double img_lower, double i
     double real_step = (real_upper-real_lower)/num;
     int local_count=0;
     bool noWork= false;
+    int horizontal_slice_count = 100 ;
+    if (horizontal_slice_count>=num){
+        printf("slice count less than num");
+        horizontal_slice_count= num/3;
+    }
+    while (num%horizontal_slice_count !=0){
+  //      printf("doesn't divide. decreasing procs value\n");
+        horizontal_slice_count--;
+    }
 
     int rank;
     MPI_Comm_rank(MPI_COMM_WORLD,&rank);
 
+    if (OMP_ENABLED){
+        int thread_count;
+        #pragma omp parallel
+        {
+            thread_count = omp_get_num_threads();
+
+        }
+        if ((rank==root-1)||(rank==root+1)){
+//            printf("adjacent to master");
+            omp_set_num_threads(2*thread_count);
+        }
+    }
     MPI_Status status;
     MPI_Ssend(NULL,0,MPI_INT,root,tag_done_work,MPI_COMM_WORLD);
 
@@ -142,9 +165,20 @@ int slaveDoWork(double real_lower, double real_upper, double img_lower, double i
 //                    real_temp=start_r+real*real_step;
 //                }
 //            }
-            EdgeTracker* et = new EdgeTracker();
-            local_count += et->pointsInRegion(start_r,end_r,img_lower,img_upper,maxiter,slice,num);
-            printf("No.%d node counted %d numbers\n", rank,local_count);
+            if (!OMP_ENABLED){
+                EdgeTracker *et = new EdgeTracker();
+                local_count += et->pointsInRegion(start_r, end_r, img_lower, img_upper, maxiter, slice, num);
+                printf("No.%d node counted %d numbers\n", rank, local_count);
+            }else {
+
+                printf("procs value: %d",horizontal_slice_count);
+                    #pragma omp parallel for schedule(dynamic) reduction(+ : local_count)
+                    for (int i = 0; i < horizontal_slice_count; i++) {
+               //     printf("in for threads: %d\n",omp_get_num_threads());
+                        EdgeTracker *et = new EdgeTracker();
+                        local_count += et->pointsInRegion(start_r, end_r, img_lower+((img_upper-img_lower)/horizontal_slice_count)*i,img_lower+((img_upper-img_lower)/horizontal_slice_count)*(i+1) , maxiter, slice, floor((float)num/(float)horizontal_slice_count));
+                }
+            }
 
             MPI_Ssend(NULL,0,MPI_INT,root,tag_done_work,MPI_COMM_WORLD);
             //printf("Node %d asks for work\n",rank);
@@ -215,7 +249,6 @@ int main(int argc, char *argv[]){
 
     stamp=MPI_Wtime();
 
-//#pragma omp parallel for
     for(int region=0;region<num_regions;region++){
         // scan the arguments
         sscanf(argv[region*6+1],"%lf",&real_lower);
