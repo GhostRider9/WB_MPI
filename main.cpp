@@ -116,11 +116,11 @@ int slaveDoWork(double real_lower, double real_upper, double img_lower, double i
     int local_count=0;
     bool noWork= false;
     int horizontal_slice_count = 100 ;
-    if (horizontal_slice_count>=num){
+    if (horizontal_slice_count>=img_num){
         printf("slice count less than num");
-        horizontal_slice_count= num/3;
+        horizontal_slice_count= img_num/3;
     }
-    while (num%horizontal_slice_count !=0){
+    while (img_num%horizontal_slice_count !=0){
   //      printf("doesn't divide. decreasing procs value\n");
         horizontal_slice_count--;
     }
@@ -172,7 +172,7 @@ int slaveDoWork(double real_lower, double real_upper, double img_lower, double i
                 et->setCardioidChecking(CARDIOID_BULB_CHECKING);
                 et->setPeriodicityChecking(PERIODICITY_CHECKING_ENABLED);
                 et->setEdgeTrackingEnabled(EDGE_TRACKING_ENABLED);
-                local_count += et->pointsInRegion(start_r, end_r, img_lower, img_upper, maxiter, slice, num);
+                local_count += et->pointsInRegion(start_r, end_r, img_lower, img_upper, maxiter, slice, img_num);
                 printf("No.%d node counted %d numbers\n", rank, local_count);
             }else {
 
@@ -184,7 +184,7 @@ int slaveDoWork(double real_lower, double real_upper, double img_lower, double i
                         et->setCardioidChecking(CARDIOID_BULB_CHECKING);
                         et->setPeriodicityChecking(PERIODICITY_CHECKING_ENABLED);
                         et->setEdgeTrackingEnabled(EDGE_TRACKING_ENABLED);
-                        local_count += et->pointsInRegion(start_r, end_r, img_lower+((img_upper-img_lower)/horizontal_slice_count)*i,img_lower+((img_upper-img_lower)/horizontal_slice_count)*(i+1) , maxiter, slice, floor((float)num/(float)horizontal_slice_count));
+                        local_count += et->pointsInRegion(start_r, end_r, img_lower+((img_upper-img_lower)/horizontal_slice_count)*i,img_lower+((img_upper-img_lower)/horizontal_slice_count)*(i+1) , maxiter, slice, floor((float)img_num/(float)horizontal_slice_count));
                 }
             }
 
@@ -245,23 +245,16 @@ int main(int argc, char *argv[]){
     int num_regions = (argc-1)/6;
 
     double stamp;
+    int rank;
     int provided;
 
-
+    // enable multi-thread support
+    MPI_Init_thread (& argc , &argv , MPI_THREAD_FUNNELED ,& provided);
 
 //#pragma omp parallel for
     for(int region=0;region<num_regions;region++){
 
-        int rank;
-
-        // enable multi-thread support
-        MPI_Init_thread (& argc , &argv , MPI_THREAD_FUNNELED ,& provided);
-
-//    MPI_Init(&argc,&argv);
-
         stamp=MPI_Wtime();
-
-    for(int region=0;region<num_regions;region++){
 
         int global_count=0;
 
@@ -324,12 +317,10 @@ int main(int argc, char *argv[]){
             printf("%d\n",global_count);
             printf("time_cost:%.16g\n",MPI_Wtime()-stamp);
         }
-
-        MPI_Finalize ();
-
     }
 
 
+    MPI_Finalize ();
 
     return EXIT_SUCCESS;
 }
