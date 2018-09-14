@@ -8,7 +8,6 @@
 #include <ctime>
 
 #define root 0
-#define slice 10000
 
 #define tag_do_work 1
 #define tag_done_work 2
@@ -48,15 +47,20 @@ int realAxisCount(float real_lower,float real_upper,int num,int maxiter){
 }
 
 
-void masterDoWork(double real_lower, double real_upper,int num){
+void masterDoWork(double real_lower, double real_upper,int num,int slice){
 
 //#pragma omp parallel
 //    {
 //        printf("Master threads: %d\n",omp_get_num_threads());
 //    }
 
+
+
     int nprocess;
     MPI_Comm_size(MPI_COMM_WORLD,&nprocess);
+
+
+
 
     double real_step=(real_upper-real_lower)/num;
     double gap=slice*real_step;
@@ -102,7 +106,7 @@ void masterDoWork(double real_lower, double real_upper,int num){
 }
 
 
-int slaveDoWork(double real_lower, double real_upper, double img_lower, double img_upper, int img_num, int maxiter){
+int slaveDoWork(double real_lower, double real_upper, double img_lower, double img_upper, int img_num, int maxiter,int slice){
 
 //#pragma omp parallel
 //    {
@@ -212,16 +216,29 @@ int mandelbrotSetCount(double real_lower, double real_upper, double img_lower, d
     MPI_Comm_rank(MPI_COMM_WORLD,&rank);
     MPI_Barrier(MPI_COMM_WORLD);
 
+
+    int slice = real_num / (nprocess * 5);
+    if (slice==0){
+        slice=1;
+    }else {
+
+        while (real_num % slice != 0) {
+            //      printf("doesn't divide. decreasing procs value\n");
+            slice--;
+        }
+    }
+    printf("slice size selected: %d",slice);
+
     printf("nprocess:%d,rank:%d\n",nprocess,rank);
 
     int global_count=0,local_count=0;
 
     if(rank==root){
-        masterDoWork(real_lower,real_upper,real_num);
+        masterDoWork(real_lower,real_upper,real_num,slice);
     }
     else{
         //printf("slave process %d do work\n",rank);
-        local_count=slaveDoWork(real_lower,real_upper,img_lower,img_upper,img_num,maxiter);
+        local_count=slaveDoWork(real_lower,real_upper,img_lower,img_upper,img_num,maxiter,slice);
         //printf("No.%d process counted %d numbers\n", rank,local_count);
     }
 
@@ -250,6 +267,10 @@ int main(int argc, char *argv[]){
 
     // enable multi-thread support
     MPI_Init_thread (& argc , &argv , MPI_THREAD_FUNNELED ,& provided);
+
+
+
+
 
 //#pragma omp parallel for
     for(int region=0;region<num_regions;region++){
